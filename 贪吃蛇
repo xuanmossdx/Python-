@@ -1,5 +1,5 @@
-import pygame
 import random
+import pygame
 
 # 初始化Pygame库
 pygame.init()
@@ -98,7 +98,9 @@ Length_of_snake = 1
 # 生成食物的初始位置
 foodx = round(random.randrange(0, SCREEN_WIDTH - snake_block_size) / 10.0) * 10.0
 foody = round(random.randrange(0, SCREEN_HEIGHT - snake_block_size) / 10.0) * 10.0
-
+# 初始化 game_over 变量为 False
+game_over = False
+game_close = True
 # 游戏循环
 while not game_over:
 
@@ -161,14 +163,14 @@ while not game_over:
 
 pygame.quit()
 quit()
-＃主程序入口
+#主程序入口
 if name == "main":
-show_menu()
-difficulty = choose_difficulty()
-if difficulty == easy:
-snake_speed = 10
-elif difficulty == medium:
-snake_speed = 15
-elif difficulty == hard:
-snake_speed = 20
-game_loop()
+    show_menu()
+    difficulty = choose_difficulty()
+    if difficulty == easy:
+        snake_speed = 10
+    elif difficulty == medium:
+        snake_speed = 15
+    elif difficulty == hard:
+        snake_speed = 20
+    game_loop()
