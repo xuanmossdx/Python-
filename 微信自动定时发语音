@@ -1,3 +1,5 @@
+#空格键用于输入当前鼠标坐标，需要配合模拟器微信进行发语音操作，暂时不知道怎么连接模拟器adb，以后再增加新功能
+
 import tkinter as tk  # 导入 tkinter 库，用于创建 GUI
 from tkinter import filedialog, messagebox
 from datetime import datetime, timedelta
