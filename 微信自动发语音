@@ -1,0 +1,198 @@
+import tkinter as tk  # 导入 tkinter 库，用于创建 GUI
+from tkinter import filedialog, messagebox
+from datetime import datetime, timedelta
+import threading  # 导入 threading 库，用于多线程
+import pygame  # 导入 pygame 库，用于播放音频
+import time
+import json  # 导入 json 库，用于保存和加载设定
+import pyautogui  # 导入 pyautogui 库，用于模拟鼠标操作
+
+# 初始化 pygame 音频模块
+pygame.mixer.init()
+
+# 创建 GUI 窗口
+window = tk.Tk()
+window.title("自动长按和音频播放脚本")  # 设置窗口标题
+window.geometry("550x600")  # 设置窗口尺寸
+window.resizable(True, True)  # 允许窗口自由缩放
+
+# 定义全局变量
+time_points = []  # 存储时间点的列表
+audio_files = {}  # 存储时间点对应的音频文件
+target_coords = (0, 0)  # 默认长按的坐标
+is_running = False  # 脚本是否正在运行
+immediate_execution = tk.BooleanVar()  # 是否立即执行的选项
+
+# 获取鼠标当前坐标并填入输入框
+def get_mouse_position(event=None):
+    global target_coords
+    x, y = window.winfo_pointerxy()
+    coord_var.set(f"{x}, {y}")
+    target_coords = (x, y)
+    print(f"已设置长按坐标: {target_coords}")
+
+# 添加新的时间点和音频文件
+def add_time_point():
+    time_str = time_entry.get()
+    audio_path = filedialog.askopenfilename(filetypes=[("MP3 files", "*.mp3")])  # 选择音频文件
+    try:
+        time_obj = datetime.strptime(time_str, "%H:%M")  # 解析时间格式
+        time_points.append(time_obj)  # 将时间点添加到列表
+        audio_files[time_obj.strftime("%H:%M")] = audio_path  # 以字符串形式保存音频文件
+        update_time_list()  # 更新显示时间点的列表
+    except ValueError:
+        messagebox.showerror("无效时间", "请输入正确的时间格式，例如：15:30")
+
+# 删除选定的时间点
+def delete_time_point():
+    selected_index = time_listbox.curselection()  # 获取选定的时间点索引
+    if selected_index:  # 确保有选择项
+        selected_time = time_points[selected_index[0]]  # 根据索引获取时间点
+        time_points.remove(selected_time)  # 从列表中删除时间点
+        audio_files.pop(selected_time.strftime("%H:%M"), None)  # 删除对应的音频文件
+        update_time_list()  # 更新列表显示
+    else:
+        messagebox.showwarning("未选中", "请在列表中选择一个时间点进行删除")
+
+# 更新显示时间点的列表
+def update_time_list():
+    time_listbox.delete(0, tk.END)  # 清空列表框
+    for time_point in sorted(time_points):
+        time_str = time_point.strftime("%H:%M")
+        time_listbox.insert(tk.END, f"{time_str} - {audio_files.get(time_str, '')}")
+
+# 保存设定到文件
+def save_settings():
+    settings = {
+        "time_points": [tp.strftime("%H:%M") for tp in time_points],
+        "audio_files": audio_files,
+        "target_coords": target_coords
+    }
+    with open("settings.json", "w") as file:
+        json.dump(settings, file)
+    messagebox.showinfo("保存成功", "设置已保存到 settings.json 文件")
+
+# 加载设定文件
+def load_settings():
+    try:
+        with open("settings.json", "r") as file:
+            settings = json.load(file)
+        global time_points, audio_files, target_coords
+        time_points = [datetime.strptime(tp, "%H:%M") for tp in settings["time_points"]]
+        audio_files = settings["audio_files"]
+        target_coords = tuple(settings["target_coords"])
+        update_time_list()
+        coord_var.set(f"{target_coords[0]}, {target_coords[1]}")
+    except (FileNotFoundError, json.JSONDecodeError):
+        messagebox.showerror("加载失败", "无法加载设置文件或文件格式错误")
+
+# 更新时间显示的标签
+def update_time_labels():
+    current_time = datetime.now().strftime("%H:%M:%S")
+    current_time_label.config(text=f"当前时间: {current_time}")
+
+    # 检查是否有未来的时间点
+    future_time_points = [tp for tp in time_points if tp.time() > datetime.now().time()]
+    
+    if future_time_points:  # 如果存在未来时间点
+        next_time_point = min(future_time_points)
+        time_to_next = datetime.combine(datetime.today(), next_time_point.time()) - datetime.now()
+        countdown_label.config(text=f"距离下一次操作: {time_to_next}")
+    else:
+        countdown_label.config(text="没有设定的时间点")
+
+    # 更新运行状态显示
+    status_label.config(text="运行状态: 运行中" if is_running else "运行状态: 未运行")
+    window.after(1000, update_time_labels)  # 每秒更新一次
+
+# 执行长按操作和播放音频
+def perform_actions():
+    global is_running
+    is_running = True
+    update_time_labels()  # 更新时间和状态标签
+    if immediate_execution.get():  # 检查是否需要立即执行一次操作
+        if time_points:  # 确保有时间点存在
+            execute_action(time_points[0])  # 执行第一个时间点的操作
+    while is_running and time_points:
+        now = datetime.now().time()
+        for time_point in list(time_points):  # 使用列表的副本进行迭代，避免修改问题
+            if now >= time_point.time() and now < (time_point + timedelta(minutes=1)).time():  # 在设定的时间内
+                execute_action(time_point)
+                time_points.remove(time_point)  # 移除已执行的时间点
+        time.sleep(1)  # 检查间隔
+
+# 执行一次长按和音频播放的操作
+def execute_action(time_point):
+    audio_path = audio_files[time_point.strftime("%H:%M")]
+    pygame.mixer.music.load(audio_path)
+    pygame.mixer.music.play()
+    print(f"长按坐标 {target_coords} 并播放音频: {audio_path}")
+    
+    # 模拟长按操作
+    pyautogui.mouseDown(target_coords)
+    while pygame.mixer.music.get_busy():
+        time.sleep(0.1)  # 等待音频播放完毕
+    pyautogui.mouseUp(target_coords)
+    print("音频播放结束，停止长按")
+
+# 启动执行线程
+def start_actions():
+    if not time_points:
+        messagebox.showwarning("未设置时间点", "请添加至少一个时间点")
+        return
+    action_thread = threading.Thread(target=perform_actions)
+    action_thread.start()
+
+# 停止执行线程
+def stop_actions():
+    global is_running
+    is_running = False
+
+# GUI 元素布局
+time_entry = tk.Entry(window)
+time_entry.grid(row=0, column=1, padx=5, pady=5)
+add_button = tk.Button(window, text="添加时间点", command=add_time_point)
+add_button.grid(row=0, column=2, padx=5, pady=5)
+
+delete_button = tk.Button(window, text="删除时间点", command=delete_time_point)  # 新增删除按钮
+delete_button.grid(row=0, column=3, padx=5, pady=5)
+
+time_listbox = tk.Listbox(window)
+time_listbox.grid(row=1, column=1, columnspan=3, padx=5, pady=5)
+
+save_button = tk.Button(window, text="保存设置", command=save_settings)
+save_button.grid(row=2, column=1, padx=5, pady=5)
+load_button = tk.Button(window, text="加载设置", command=load_settings)
+load_button.grid(row=2, column=2, padx=5, pady=5)
+
+coord_var = tk.StringVar()
+coord_entry = tk.Entry(window, textvariable=coord_var)
+coord_entry.grid(row=3, column=1, padx=5, pady=5)
+
+start_button = tk.Button(window, text="启动", command=start_actions)
+start_button.grid(row=4, column=1, padx=5, pady=5)
+stop_button = tk.Button(window, text="停止", command=stop_actions)
+stop_button.grid(row=4, column=2, padx=5, pady=5)
+
+# 立即执行选项
+immediate_check = tk.Checkbutton(window, text="启动后立即执行一次", variable=immediate_execution)
+immediate_check.grid(row=5, column=1, columnspan=2)
+
+# 当前时间和倒计时标签
+current_time_label = tk.Label(window, text="当前时间: ")
+current_time_label.grid(row=6, column=1, padx=5, pady=5)
+countdown_label = tk.Label(window, text="距离下一次操作: ")
+countdown_label.grid(row=6, column=2, padx=5, pady=5)
+
+# 运行状态标签
+status_label = tk.Label(window, text="运行状态: 未运行")
+status_label.grid(row=7, column=1, columnspan=2)
+
+# 绑定空格键获取鼠标坐标
+window.bind('<space>', get_mouse_position)
+
+# 初始化标签更新
+update_time_labels()
+
+# 运行 GUI 主循环
+window.mainloop()
